@@ -1,2 +1,2 @@
-# ekf_for_multicopter
-マルチコプタ様にExtend Kalman Filterの解説記事です。 
+# Extended Kalman Filter for Multicopter
+マルチコプタ用のExtended Kalman Filterのサンプルプログラムです。
