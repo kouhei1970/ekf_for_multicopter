@@ -1,0 +1,213 @@
+/**
+ Copyright (c) 2021 Kouhei Ito 
+*/
+
+#include <stdio.h>
+#include <iostream>
+#include "pico/stdlib.h"
+#include <Eigen/Dense>
+
+using Eigen::MatrixXd;
+using Eigen::MatrixXf;
+using Eigen::Matrix;
+using Eigen::PartialPivLU;
+
+uint8_t state_equation(Matrix<float, 7, 1>*x, Matrix<float, 3, 1> omega, Matrix<float, 3, 1> beta){
+  float q0=*x(0, 0);
+  float q1=*x(1, 0);
+  float q2=*x(2, 0);
+  float q3=*x(3, 0);
+  float dp=*x(4, 0);
+  float dq=*x(5, 0);
+  float dr=*x(6, 0);
+  float pm=omega(0, 0);
+  float qm=omega(1, 0);
+  float rm=omega(2, 0);
+  float betax=beta(0, 0);
+  float betay=beta(1, 0);
+  float betaz=beta(2, 0);
+
+  *x(0, 0)=0.5*(-(pm-dp)-(qm-dq)-(rm-dr));
+  *x(1, 0)=0.5*( (pm-dp)+(rm-dr)-(qm-dq));
+  *x(2, 0)=0.5*( (qm-dq)-(rm-dr)+(pm-dp));
+  *x(3, 0)=0.5*( (rm-dr)+(qm-dq)-(pm-dp));
+  *x(4, 0)=-betax*dp;
+  *x(5, 0)=-betay*dq;
+  *x(6, 0)=-betaz*dr;
+
+  return 0;
+}
+
+uint8_t observation_equation(Matrix<float, 7, 1>x, Matrix<float, 6, 1>*z, float g, float mn, float md){
+  float q0=x(0, 0);
+  float q1=x(1, 0);
+  float q2=x(2, 0);
+  float q3=x(3, 0);
+
+  *z(0, 0)=2.0*(q1*q3+q0*q2)*g;
+  *z(1, 0)=2.0*(q2*q3+q0*q1)*g;
+  *z(2, 0)=(q0*q0 - q1*q1 - q2*q2 + q3*q3)*g ;
+  *z(3, 0)=(q0*q0 + q1*q1 - q2*q2 - q3*q3)*mn+2.0*(q1*q3+q0*q2)*md;
+  *z(4, 0)=2.0*(q1*q2+q0*q3)*mn - 2.0*(q2*q3+q0*q1)*md;
+  *z(5, 0)=2.0*(q1*q3+q0*q2)*mn+(q0*q0 - q1*q1 - q2*q2 + q3*q3)*md;
+  
+  return 0;
+}
+
+uint8_t F_jacobian(Matrix<float, 7, 7>*F, Matrix<float,7, 1> x, Matrix<float, 3, 1> omega, Matrix<float, 3, 1> beta, float dt){
+  //Matrix<float, 7, 7> I7=MatrixXd::Identity(7,7);
+  float q0=*x(0, 0);
+  float q1=*x(1, 0);
+  float q2=*x(2, 0);
+  float q3=*x(3, 0);
+  float dp=*x(4, 0);
+  float dq=*x(5, 0);
+  float dr=*x(6, 0);
+  float pm=omega(0, 0);
+  float qm=omega(1, 0);
+  float rm=omega(2, 0);
+  float betax=beta(0, 0);
+  float betay=beta(1, 0);
+  float betaz=beta(2, 0);
+
+  *F(0, 0)= 1.0;
+  *F(0, 1)=-0.5*(pm -dp)*dt;
+  *F(0, 2)=-0.5*(qm -dq)*dt;
+  *F(0, 3)=-0.5*(rm -dr)*dt;
+  *F(0, 4)= 0.5*q1*dt;
+  *F(0, 5)= 0.5*q2*dt;
+  *F(0, 6)= 0.5*q3*dt;
+
+  *F(1, 0)= 0.5*(pm -dp)*dt;
+  *F(1, 1)= 1.0;
+  *F(1, 2)= 0.5*(rm -dr)*dt;
+  *F(1, 3)=-0.5*(qm -dq)*dt;
+  *F(1, 4)=-0.5*q0*dt;
+  *F(1, 5)= 0.5*q3*dt;
+  *F(1, 6)=-0.5*q2*dt;
+
+  *F(2, 0)= 0.5*(qm -dq)*dt;
+  *F(2, 1)=-0.5*(rm -dr)*dt;
+  *F(2, 2)= 1.0;
+  *F(2, 3)= 0.5*(pm -dp)*dt;
+  *F(2, 4)=-0.5*q3*dt;
+  *F(2, 5)=-0.5*q0*dt;
+  *F(2, 6)= 0.5*q1*dt;
+  
+  *F(3, 0)= 0.5*(rm -dr)*dt;
+  *F(3, 1)= 0.5*(qm -dq)*dt;
+  *F(3, 2)=-0.5*(pm -dp)*dt;
+  *F(3, 3)= 1.0;
+  *F(3, 4)= 0.5*q2*dt;
+  *F(3, 5)=-0.5*q1*dt;
+  *F(3, 6)=-0.5*q0*dt;
+  
+  *F(4, 0)= 0.0;
+  *F(4, 1)= 0.0;
+  *F(4, 2)= 0.0;
+  *F(4, 3)= 0.0;
+  *F(4, 4)=-betax;
+  *F(4, 5)= 0.0;
+  *F(4, 6)= 0.0;
+  
+  *F(5, 0)= 0.0;
+  *F(5, 1)= 0.0;
+  *F(5, 2)= 0.0;
+  *F(5, 3)= 0.0;
+  *F(5, 4)= 0.0;
+  *F(5, 5)=-betay;
+  *F(5, 6)= 0.0;
+  
+  *F(6, 0)= 0.0;
+  *F(6, 1)= 0.0;
+  *F(6, 2)= 0.0;
+  *F(6, 3)= 0.0;
+  *F(6, 4)= 0.0;
+  *F(6, 5)= 0.0;
+  *F(6, 6)=-betaz;
+  
+  return 0;
+}
+
+uint8_t H_jacobian(Matrix<float, 6, 7>*H, Matrix<float, 7, 1>x, float g, float mn, float md){
+  float q0=x(0, 0);
+  float q1=x(1, 0);
+  float q2=x(2, 0);
+  float q3=x(3, 0);
+
+  *H(0, 0)= 2.0*q2*g;
+  *H(0, 1)= 2.0*q3*g;
+  *H(0, 2)= 2.0*q0*g;
+  *H(0, 3)= 2.0*q1*g;
+  *H(0, 4)= 0.0;
+  *H(0, 5)= 0.0;
+  *H(0, 6)= 0.0;
+  
+  *H(1, 0)= 2.0*q1*g;
+  *H(1, 1)= 2.0*q0*g;
+  *H(1, 2)= 2.0*q3*g;
+  *H(1, 3)= 2.0*q2*g;
+  *H(1, 4)= 0.0;
+  *H(1, 5)= 0.0;
+  *H(1, 6)= 0.0;
+  
+  *H(2, 0)= 2.0*q0*g;
+  *H(2, 1)=-2.0*q1*g;
+  *H(2, 2)=-2.0*q2*g;
+  *H(2, 3)= 2.0*q3*g;
+  *H(2, 4)= 0.0;
+  *H(2, 5)= 0.0;
+  *H(2, 6)= 0.0;
+  
+  *H(3, 0)= 2.0*q0*mn+q2*md;
+  *H(3, 1)= 2.0*q1*mn+q3*md;
+  *H(3, 2)=-2.0*q2*mn+q0*md;
+  *H(3, 3)=-2.0*q3*mn+q1*md;
+  *H(3, 4)= 0.0;
+  *H(3, 5)= 0.0;
+  *H(3, 6)= 0.0;
+  
+  *H(4, 0)=-q3*mn-q1*md;
+  *H(4, 1)= q2*mn-q0*md;
+  *H(4, 2)= q1*mn-q3*md;
+  *H(4, 3)=-q0*mn-q2*md;
+  *H(4, 4)= 0.0;
+  *H(4, 5)= 0.0;
+  *H(4, 6)= 0.0;
+  
+  *H(5, 0)= q2*mn+q0*md;
+  *H(5, 1)= q3*mn-q1*md;
+  *H(5, 2)=-q0*mn-q2*md;
+  *H(5, 3)= q1*mn+q0*md;
+  *H(5, 4)= 0.0;
+  *H(5, 5)= 0.0;
+  *H(5, 6)= 0.0;
+  
+  return 0;
+}
+
+
+uint8_t ekf(Matrix<float, 7,1>*x, Matrix<float, 7,7>*P, Matrix<float 7,7>Q, Matrix<float, 3, 3>R, Matrix<float, 6, 3>G){
+
+  uint8_t ret;
+  Matrix<float, 7, 7>F;
+  Matrix<float, 6, 7>H;
+  Matrix<float, 6, 6>Den;
+  Matrix<float, 6, 6> I6=MatrixXd::Identity(6,6);
+
+  //Predict
+  ret=state_equation(x);
+  ret=F_jacobian(&F,x);
+  P=F*P*F.transpose()*G*Q*G;
+  
+  //Update
+  ret=H_jacobian(&H, x);
+  Den=H*P*H.transpose()+R
+  PartialPivLU< Matrix<float, 6, 6> > dec(Den);
+  Den = dec.solve(I6);
+  K=P*H.transpose()*Den
+  x=x+K*(z-observation_equation(x));
+  P=P-K*H*P
+
+  return 0;
+}
