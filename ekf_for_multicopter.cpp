@@ -8,7 +8,7 @@
 #include <Eigen/Dense>
 #define GRAV (9.80665)
 #define MN (1.0)
-#define MD (0.0)
+#define MD (0.1)
 
 using Eigen::MatrixXd;
 using Eigen::MatrixXf;
@@ -215,7 +215,7 @@ uint8_t H_jacobian(Matrix<float, 6, 7>&H, Matrix<float, 7, 1>x, float g, float m
   H(5, 6) = 0.0;
   
   return 0;
-}i
+}
 
 uint8_t ekf( Matrix<float, 7, 1> &x,
              Matrix<float, 7, 7> &P,
@@ -259,11 +259,11 @@ uint8_t ekf( Matrix<float, 7, 1> &x,
 int main(void){
   Matrix<float, 7 ,1> x = MatrixXf::Zero(7,1);
   Matrix<float, 7 ,1> x_sim = MatrixXf::Zero(7,1);
-  Matrix<float, 7 ,7> P = MatrixXf::Identity(7,7)*10.0;
+  Matrix<float, 7 ,7> P = MatrixXf::Identity(7,7)*100.0;
   Matrix<float, 6 ,1> z = MatrixXf::Zero(6,1);
   Matrix<float, 6 ,1> z_sim = MatrixXf::Zero(6,1);
   Matrix<float, 3, 1> omega = MatrixXf::Zero(3, 1);
-  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*1000.0;
+  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*1.0;
   Matrix<float, 6, 6> R = MatrixXf::Identity(6, 6)*1.0;
   Matrix<float, 7 ,3> G;
   Matrix<float, 3 ,1> beta;
@@ -278,11 +278,12 @@ int main(void){
   quat_sim<<1.0, 0.0, 0.0, 0.0;
   x << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
   x_sim = x;
-  omega << 3.14, 0.0, 0.0;
+  omega << 3.14, 3.14, 3.14;
   omega_sim=omega;
   observation_equation(x, z_sim, GRAV, MN, MD);
   G << 0,0,0, 0,0,0, 0,0,0, 0,0,0, 1,0,0, 0,1,0, 0,0,1;
   beta << 0.0,0.0,0.0;
+
 
   //Initilize Console Input&Output
   stdio_init_all();  
