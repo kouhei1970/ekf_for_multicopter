@@ -300,8 +300,8 @@ int main(void){
   {
     printf("%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %llu\n",
               t, 
-              //x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
-              //quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
+              x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
+              quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
               z_sim(0,0), z_sim(1,0), z_sim(2,0),
               e_time-s_time);  
 
