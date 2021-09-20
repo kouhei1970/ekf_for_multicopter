@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <random>
 #include "pico/stdlib.h"
 #include <Eigen/Dense>
 #define GRAV (9.80665)
@@ -288,14 +289,20 @@ int main(void){
   //Initilize Console Input&Output
   stdio_init_all();  
   
+  //Initilize White Noise
+  std::random_device rnd;
+  std::mt19937 mt(rnd());  
+  std::normal_distribution<> norm(0.0, 1.0);
+
   //Start up wait
   for (i=0;i<waittime;i++)
   {
-    printf("#Please wait %d[s]\n",waittime-i);
+    printf("#Please wait %d[s] ! Random number test:%f\n",waittime-i, norm(mt) );
     sleep_ms(1000);
   }
   printf("#Start Kalman Filter\n");
-
+  
+  
   //Main Loop 
   while(1)
   {
