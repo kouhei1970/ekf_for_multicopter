@@ -215,7 +215,7 @@ uint8_t H_jacobian(Matrix<float, 6, 7>&H, Matrix<float, 7, 1>x, float g, float m
   H(5, 6) = 0.0;
   
   return 0;
-}
+}i
 
 uint8_t ekf( Matrix<float, 7, 1> &x,
              Matrix<float, 7, 7> &P,
@@ -246,8 +246,8 @@ uint8_t ekf( Matrix<float, 7, 1> &x,
   observation_equation(x, zbar, GRAV, MN, MD);
   x = x + K*(z - zbar);
   P = P - K*H*P;
-  std::cout << K << std::endl;
-  std::cout << z-zbar << std::endl;
+  //std::cout << K << std::endl;
+  //std::cout << z-zbar << std::endl;
 
   //Predict
   state_equation(x, omega, beta, dt);
@@ -300,8 +300,8 @@ int main(void){
   {
     printf("%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %llu\n",
               t, 
-              x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
-              quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
+              //x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
+              //quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
               z_sim(0,0), z_sim(1,0), z_sim(2,0),
               e_time-s_time);  
 
