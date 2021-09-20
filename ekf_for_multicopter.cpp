@@ -236,10 +236,6 @@ uint8_t ekf( Matrix<float, 7, 1> &x,
   Matrix<float, 7, 6> K;
   Matrix<float, 6, 1> zbar;
 
-  //Predict
-  state_equation(x, omega, beta, dt);
-  F_jacobian(F, x, omega, beta, dt);
-  P=F*P*F.transpose() + G*Q*G.transpose();
   
   //Update
   H_jacobian(H, x, GRAV, MN, MD);
@@ -248,20 +244,26 @@ uint8_t ekf( Matrix<float, 7, 1> &x,
   //Den = dec.solve(I6);
   K = P*H.transpose()*Den.inverse();
   observation_equation(x, zbar, GRAV, MN, MD);
-  x = x + K*(z-zbar);
+  x = x + K*(z - zbar);
   P = P - K*H*P;
+  std::cout << K << std::endl;
+  std::cout << z-zbar << std::endl;
 
+  //Predict
+  state_equation(x, omega, beta, dt);
+  F_jacobian(F, x, omega, beta, dt);
+  P = F*P*F.transpose() + G*Q*G.transpose();
   return 0;
 }
 
 int main(void){
   Matrix<float, 7 ,1> x = MatrixXf::Zero(7,1);
   Matrix<float, 7 ,1> x_sim = MatrixXf::Zero(7,1);
-  Matrix<float, 7 ,7> P = MatrixXf::Zero(7,7);
+  Matrix<float, 7 ,7> P = MatrixXf::Identity(7,7)*10.0;
   Matrix<float, 6 ,1> z = MatrixXf::Zero(6,1);
   Matrix<float, 6 ,1> z_sim = MatrixXf::Zero(6,1);
   Matrix<float, 3, 1> omega = MatrixXf::Zero(3, 1);
-  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*0.0;
+  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*1000.0;
   Matrix<float, 6, 6> R = MatrixXf::Identity(6, 6)*1.0;
   Matrix<float, 7 ,3> G;
   Matrix<float, 3 ,1> beta;
@@ -270,10 +272,12 @@ int main(void){
   short i,waittime=15;
   Matrix<float, 4, 1> quat_sim;
   Matrix<float, 3, 1> omega_sim;
-  
+  Matrix<float, 3, 1> domega;
+
   //Variable Initalize
- quat_sim<<1.0, 0.0, 0.0, 0.0;
+  quat_sim<<1.0, 0.0, 0.0, 0.0;
   x << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+  x_sim = x;
   omega << 3.14, 0.0, 0.0;
   omega_sim=omega;
   observation_equation(x, z_sim, GRAV, MN, MD);
@@ -294,15 +298,24 @@ int main(void){
   //Main Loop 
   while(1)
   {
-    printf("%f %f %f %f %f %f %f %f %f %f %f %f %llu\n",
+    printf("%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %llu\n",
               t, 
-              x(0,0), x(1,0), x(2,0),x(3,0),
+              x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
               quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
               z_sim(0,0), z_sim(1,0), z_sim(2,0),
               e_time-s_time);  
 
-    omega=omega_sim;
+    //Control
+    domega<<x(4,0), x(5,0), x(6,0);
+    omega=omega_sim-domega;
+    
+
+    //Simulation
+    observation_equation(x_sim, z_sim, GRAV, MN, MD);
     z=z_sim;
+    rk4(quatdot, t, dt, quat_sim, omega_sim);
+    x_sim << quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0), 0,0,0; 
+    t=t+dt;
 
     //Begin Extended Kalman Filter
     s_time=time_us_64();
@@ -310,11 +323,6 @@ int main(void){
     e_time=time_us_64();
     //End   Extended Kalman Filter
 
-    //Simulation
-    rk4(quatdot, t, dt, quat_sim, omega_sim);
-    x_sim << quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0), 0,0,0; 
-    observation_equation(x_sim, z_sim, GRAV, MN, MD);
-    t=t+dt;
 
     //sleep_ms(100);
   } 
