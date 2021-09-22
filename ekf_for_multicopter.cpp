@@ -7,6 +7,7 @@
 #include <random>
 #include "pico/stdlib.h"
 #include <Eigen/Dense>
+
 #define GRAV (9.80665)
 #define MN (1.0)
 #define MD (0.1)
@@ -17,34 +18,71 @@ using Eigen::Matrix;
 using Eigen::PartialPivLU;
 using namespace Eigen;
 
-uint8_t rk4(uint8_t (*func)(float t, Matrix<float, 4, 1> quat , Matrix<float, 3, 1>x, Matrix<float, 4, 1> &k),
+//Initilize White Noise
+std::random_device rnd;
+std::mt19937 mt(rnd());  
+std::normal_distribution<> norm(0.0, 1.0);
+
+//Runge-Kutta Method 
+uint8_t rk4(uint8_t (*func)(float t, 
+                            Matrix<float, 7, 1> x, 
+                            Matrix<float, 3, 1> omega_m, 
+                            Matrix<float, 3, 1> beta, 
+                            Matrix<float, 7, 1> &k),
             float t, 
             float h, 
-            Matrix<float, 4 ,1> &y, 
-            Matrix<float, 3, 1> &x)
+            Matrix<float, 7 ,1> &x, 
+            Matrix<float, 3, 1> omega_m,
+            Matrix<float, 3, 1> beta)
 {
-  uint8_t ret;
-  Matrix<float, 4, 1> k1,k2,k3,k4;
-  func(t,       y,            x, k1);
-  func(t+0.5*h, y + 0.5*h*k1, x, k2);
-  func(t+0.5*h, y + 0.5*h*k2, x, k3);
-  func(t+h,     y +     h*k3, x, k4);
-  y = y + h*(k1 + 2.0*k2 + 2.0*k3 + k4)/6.0;
+  Matrix<float, 7, 1> k1,k2,k3,k4;
+
+  func(t,       x,            omega_m, beta, k1);
+  func(t+0.5*h, x + 0.5*h*k1, omega_m, beta, k2);
+  func(t+0.5*h, x + 0.5*h*k2, omega_m, beta, k3);
+  func(t+h,     x +     h*k3, omega_m, beta, k4);
+  x = x + h*(k1 + 2.0*k2 + 2.0*k3 + k4)/6.0;
+  
   return 0;
 }
 
-uint8_t quatdot(float t, Matrix<float, 4, 1> quat, Matrix<float, 3, 1> omega , Matrix<float, 4, 1> &k)
+//Continuous Time State Equation for simulation
+uint8_t xdot( float t, 
+              Matrix<float, 7, 1> x, 
+              Matrix<float, 3, 1> omega_m , 
+              Matrix<float, 3, 1> beta, 
+              Matrix<float, 7, 1> &k)
 {
-  Matrix4f A;
-  float p=omega(0,0);
-  float q=omega(1,0);
-  float r=omega(2,0);
-  A<<0,-0.5*p,-0.5*q,-0.5*r,  0.5*p,0,0.5*r,-0.5*q,  0.5*q,-0.5*r,0,0.5*p,  0.5*r,0.5*q,-0.5*p,0;  
-  k=A*quat;
+  float q0 = x(0,0);
+  float q1 = x(1,0);
+  float q2 = x(2,0);
+  float q3 = x(3,0);
+  float dp = x(4,0);
+  float dq = x(5,0);
+  float dr = x(6,0);
+  float pm = omega_m(0,0);
+  float qm = omega_m(1,0);
+  float rm = omega_m(2,0);
+  float betax = beta(0,0);
+  float betay = beta(1,0);
+  float betaz = beta(2,0);
+ 
+  k(0,0) = 0.5*(-(pm-dp)*q1 - (qm-dq)*q2 - (rm-dr)*q3);
+  k(1,0) = 0.5*( (pm-dp)*q0 + (rm-dr)*q2 - (qm-dq)*q3);
+  k(2,0) = 0.5*( (qm-dq)*q0 - (rm-dr)*q1 + (pm-dp)*q3);
+  k(3,0) = 0.5*( (rm-dr)*q0 + (qm-dq)*q1 - (pm-dp)*q2);
+  k(4,0) =-betax*dp;
+  k(5,0) =-betay*dq;
+  k(6,0) =-betaz*dr;
+
   return 0;
 }
 
-uint8_t state_equation(Matrix<float, 7, 1>&x, Matrix<float, 3, 1> omega_m, Matrix<float, 3, 1> beta, float dt)
+//Discrite Time State Equation
+uint8_t state_equation( Matrix<float, 7, 1> &x, 
+                        Matrix<float, 3, 1> omega_m, 
+                        Matrix<float, 3, 1> beta, 
+                        float dt)
 {
   float q0=x(0, 0);
   float q1=x(1, 0);
@@ -67,10 +105,11 @@ uint8_t state_equation(Matrix<float, 7, 1>&x, Matrix<float, 3, 1> omega_m, Matri
   x(4, 0) = dp -betax*dp*dt;
   x(5, 0) = dq -betay*dq*dt;
   x(6, 0) = dr -betaz*dr*dt;
-
+  
   return 0;
 }
 
+//Observation Equation
 uint8_t observation_equation(Matrix<float, 7, 1>x, Matrix<float, 6, 1>&z, float g, float mn, float md){
   float q0 = x(0, 0);
   float q1 = x(1, 0);
@@ -87,7 +126,13 @@ uint8_t observation_equation(Matrix<float, 7, 1>x, Matrix<float, 6, 1>&z, float 
   return 0;
 }
 
-uint8_t F_jacobian(Matrix<float, 7, 7>&F, Matrix<float,7, 1> x, Matrix<float, 3, 1> omega, Matrix<float, 3, 1> beta, float dt){
+//Make Jacobian matrix F
+uint8_t F_jacobian( Matrix<float, 7, 7>&F, 
+                    Matrix<float, 7, 1> x, 
+                    Matrix<float, 3, 1> omega, 
+                    Matrix<float, 3, 1> beta, 
+                    float dt)
+{
   float q0=x(0, 0);
   float q1=x(1, 0);
   float q2=x(2, 0);
@@ -161,7 +206,13 @@ uint8_t F_jacobian(Matrix<float, 7, 7>&F, Matrix<float,7, 1> x, Matrix<float, 3,
   return 0;
 }
 
-uint8_t H_jacobian(Matrix<float, 6, 7>&H, Matrix<float, 7, 1>x, float g, float mn, float md){
+//Make Jacobian matrix H
+uint8_t H_jacobian( Matrix<float, 6, 7> &H, 
+                    Matrix<float, 7, 1> x, 
+                    float g, 
+                    float mn, 
+                    float md)
+{
   float q0 = x(0, 0);
   float q1 = x(1, 0);
   float q2 = x(2, 0);
@@ -218,6 +269,7 @@ uint8_t H_jacobian(Matrix<float, 6, 7>&H, Matrix<float, 7, 1>x, float g, float m
   return 0;
 }
 
+//Extended Kalman Filter
 uint8_t ekf( Matrix<float, 7, 1> &x,
              Matrix<float, 7, 7> &P,
              Matrix<float, 6, 1> z,
@@ -228,71 +280,77 @@ uint8_t ekf( Matrix<float, 7, 1> &x,
              Matrix<float, 3, 1> beta,
              float dt)
 {
-
-  uint8_t ret;
   Matrix<float, 7, 7> F;
   Matrix<float, 6, 7> H;
   Matrix<float, 6, 6> Den;
   Matrix<float, 6, 6> I6=MatrixXf::Identity(6,6);
   Matrix<float, 7, 6> K;
   Matrix<float, 6, 1> zbar;
-
   
   //Update
   H_jacobian(H, x, GRAV, MN, MD);
-  Den = H*P*H.transpose()+R;
+  Den = H * P * (H.transpose()) + R;
   //PartialPivLU< Matrix<float, 6, 6> > dec(Den);
   //Den = dec.solve(I6);
-  K = P*H.transpose()*Den.inverse();
+  K = P * (H.transpose()) * Den.inverse();
   observation_equation(x, zbar, GRAV, MN, MD);
   x = x + K*(z - zbar);
   P = P - K*H*P;
-  //std::cout << K << std::endl;
-  //std::cout << z-zbar << std::endl;
 
   //Predict
   state_equation(x, omega, beta, dt);
   F_jacobian(F, x, omega, beta, dt);
-  P = F*P*F.transpose() + G*Q*G.transpose();
+  P = F*P*(F.transpose()) + G*Q*(G.transpose());
+
+  //std::cout << "###" << std::endl;
+  //std::cout << "H\n" << H << "\nP\n" << P << "\nHT\n" << H.transpose() << "\nK\n" << K << "\n" << std::endl; 
+  //std::cout << "R\n" << R << "\nQ\n" << Q << "\nF\n" << F << "\nDen\n" << Den << "\n" << std::endl; 
+  //std::cout << "z-zbar\n" << z-zbar << "\nK*(z-zbar)\n" << K*(z-zbar) << std::endl;
+
   return 0;
 }
 
-int main(void){
+void eigen_exercise(void)
+{
+  Matrix<float, 6, 7> A, B;
+  A = MatrixXf::Random(6,7);
+  B << 1,1,1,1,1,1,1, 1,1,1,1,1,1,1, 1,1,1,1,1,1,1, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0;  
+  std::cout << A << std::endl << B << std::endl;
+  std::cout << B*A.transpose() << std::endl;
+  while(1);
+}
+
+
+int main(void)
+{
   Matrix<float, 7 ,1> x = MatrixXf::Zero(7,1);
   Matrix<float, 7 ,1> x_sim = MatrixXf::Zero(7,1);
-  Matrix<float, 7 ,7> P = MatrixXf::Identity(7,7)*100.0;
+  Matrix<float, 7 ,7> P = MatrixXf::Identity(7,7)*100;
   Matrix<float, 6 ,1> z = MatrixXf::Zero(6,1);
   Matrix<float, 6 ,1> z_sim = MatrixXf::Zero(6,1);
-  Matrix<float, 3, 1> omega = MatrixXf::Zero(3, 1);
-  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*1.0;
-  Matrix<float, 6, 6> R = MatrixXf::Identity(6, 6)*1.0;
+  Matrix<float, 3, 1> omega_m = MatrixXf::Zero(3, 1);
+  Matrix<float, 3, 1> omega_sim;
+  Matrix<float, 3, 1> domega;
+  Matrix<float, 3, 1> domega_sim;
+  Matrix<float, 3, 3> Q = MatrixXf::Identity(3, 3)*0.00;
+  Matrix<float, 6, 6> R = MatrixXf::Identity(6, 6);
   Matrix<float, 7 ,3> G;
   Matrix<float, 3 ,1> beta;
   float t=0.0,dt=0.0025;
   uint64_t s_time=0,e_time=0;
   short i,waittime=15;
-  Matrix<float, 4, 1> quat_sim;
-  Matrix<float, 3, 1> omega_sim;
-  Matrix<float, 3, 1> domega;
 
   //Variable Initalize
-  quat_sim<<1.0, 0.0, 0.0, 0.0;
-  x << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
-  x_sim = x;
-  omega << 3.14, 3.14, 3.14;
-  omega_sim=omega;
+  x     << 1.0, 0.0, 0.0, 0.0, 0.005, 0.015, 0.025;
+  x_sim << 1.0, 0.0, 0.0, 0.0, 0.01, 0.02, 0.03;
+  omega_sim << 3.14, 3.0, 2.0;
   observation_equation(x, z_sim, GRAV, MN, MD);
-  G << 0,0,0, 0,0,0, 0,0,0, 0,0,0, 1,0,0, 0,1,0, 0,0,1;
-  beta << 0.0,0.0,0.0;
 
+  G << 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1.0;
+  beta << 0.003, 0.003, 0.003;
 
   //Initilize Console Input&Output
   stdio_init_all();  
-  
-  //Initilize White Noise
-  std::random_device rnd;
-  std::mt19937 mt(rnd());  
-  std::normal_distribution<> norm(0.0, 1.0);
 
   //Start up wait
   for (i=0;i<waittime;i++)
@@ -302,37 +360,51 @@ int main(void){
   }
   printf("#Start Kalman Filter\n");
   
-  
+  //eigen_exercise();
+
+  //float endtime=60.0;
+  //int counter=10;
+
   //Main Loop 
   while(1)
   {
-    printf("%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %llu\n",
+
+#if 0
+    printf("%9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %llu\n",
               t, 
               x(0,0), x(1,0), x(2,0),x(3,0), x(4,0), x(5,0),x(6,0),
-              quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0),
-              z_sim(0,0), z_sim(1,0), z_sim(2,0),
+              x_sim(0,0), x_sim(1,0), x_sim(2,0), x_sim(3,0), x_sim(4,0), x_sim(5,0), x_sim(6,0),
+              e_time-s_time);  
+#endif
+
+    printf("%9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %llu\n",
+              t, 
+              x(0,0)-x_sim(0,0), x(1,0)-x_sim(1,0), x(2,0)-x_sim(2,0), x(3,0)-x_sim(3,0), 
+              x(4,0)-x_sim(4,0), x(5,0)-x_sim(5,0), x(6,0)-x_sim(6,0),
               e_time-s_time);  
 
     //Control
-    domega<<x(4,0), x(5,0), x(6,0);
-    omega=omega_sim-domega;
-    
+    domega << x(4,0), x(5,0), x(6,0);
+    domega_sim << x_sim(4,0), x_sim(5,0), x_sim(6,0);
+    omega_m = omega_sim + domega_sim;
 
     //Simulation
     observation_equation(x_sim, z_sim, GRAV, MN, MD);
     z=z_sim;
-    rk4(quatdot, t, dt, quat_sim, omega_sim);
-    x_sim << quat_sim(0,0), quat_sim(1,0), quat_sim(2,0), quat_sim(3,0), 0,0,0; 
+    rk4(xdot, t, dt, x_sim, omega_sim, beta);
     t=t+dt;
 
     //Begin Extended Kalman Filter
     s_time=time_us_64();
-    ekf(x, P, z, omega, Q, R, G, beta, dt);
+    ekf(x, P, z, omega_m, Q, R, G*dt, beta, dt);
     e_time=time_us_64();
     //End   Extended Kalman Filter
 
-
     //sleep_ms(100);
-  } 
+  }
+
+  printf("Bye...");
+  while(1);
+
   return 0;
 }
