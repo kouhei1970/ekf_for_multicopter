@@ -12,6 +12,7 @@
 #define GRAV (9.80665)
 #define MN (1.0)
 #define MD (0.1)
+#define PI (3.14159)
 
 using Eigen::MatrixXd;
 using Eigen::MatrixXf;
@@ -318,24 +319,8 @@ uint8_t ekf( Matrix<float, 7, 1> &xe,
   F_jacobian(F, xe, omega, beta, dt);
   P = F*P*F.transpose() + G*Q*G.transpose();
 
-  //std::cout << "###" << std::endl;
-  //std::cout << "H\n" << H << "\nP\n" << P << "\nHT\n" << H.transpose() << "\nK\n" << K << "\n" << std::endl; 
-  //std::cout << "R\n" << R << "\nQ\n" << Q << "\nF\n" << F << "\nDen\n" << Den << "\n" << std::endl; 
-  //std::cout << "z-zbar\n" << z-zbar << "\nK*(z-zbar)\n" << K*(z-zbar) << std::endl;
-
   return 0;
 }
-
-void eigen_exercise(void)
-{
-  Matrix<float, 6, 7> A, B;
-  A = MatrixXf::Random(6,7);
-  B << 1,1,1,1,1,1,1, 1,1,1,1,1,1,1, 1,1,1,1,1,1,1, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0;  
-  std::cout << A << std::endl << B << std::endl;
-  std::cout << B*A.transpose() << std::endl;
-  while(1);
-}
-
 
 int main(void)
 {
@@ -357,29 +342,43 @@ int main(void)
   float t=0.0,dt=0.0025;
   uint64_t s_time=0,e_time=0;
   short i,waittime=15;
+  float p_com[10]={0.1*PI, 0, 0.01*PI, 0, -0.01*PI, 0, 0.02*PI, 0, -0.05*PI, 0};
+  float q_com[10]={0.1*PI, 0, 0      , 0, -0.01*PI, 0, 0.02*PI, 0, -0.02*PI, 0};
+  float r_com[10]={0.1*PI, 0,-0.02*PI, 0,      -PI, 0, 0.02*PI, 0,  0.02*PI, 0};
+  float endtime=1000.0;
+  float control_period=5.0;
+  float control_time=5.0;
+  int counter=0;
+  int sample=1;
+  int control_counter=0;
+  int control_counter_max=0;
 
   //Variable Initalize
-  xe     << 1.0, 0.0, 0.0, 0.0, 0.011, 0.021, 0.031;
+  xe << 1.0, 0.0, 0.0, 0.0, 0.011, 0.021, 0.031;
   xp =xe;
   x_sim << 1.0, 0.0, 0.0, 0.0, 0.01, 0.02, 0.03;
-  omega_sim << 3.14, 0, 0;
   observation_equation(x_sim, z_sim, GRAV, MN, MD);
-
-  G << 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1.0;
+  G <<  0.0,0.0,0.0, 
+        0.0,0.0,0.0, 
+        0.0,0.0,0.0, 
+        0.0,0.0,0.0, 
+        1.0,0.0,0.0, 
+        0.0,1.0,0.0, 
+        0.0,0.0,1.0;
   beta << 0.003, 0.003, 0.003;
-  P <<  100,0,0,0,0,0,0,  
-        0,100,0,0,0,0,0,
-        0,0,100,0,0,0,0,  
-        0,0,0,100,0,0,0, 
-        0,0,0,0,100,0,0,  
-        0,0,0,0,0,100,0,  
-        0,0,0,0,0,0,100;
+  P <<  1,0,0,0,0,0,0,  
+        0,1,0,0,0,0,0,
+        0,0,1,0,0,0,0,  
+        0,0,0,1,0,0,0, 
+        0,0,0,0,1,0,0,  
+        0,0,0,0,0,1,0,  
+        0,0,0,0,0,0,1;
   
   //Initilize Console Input&Output
   //stdio_init_all();  
 
 #if 0
-  //Start up wait
+  //Start up wait for Pico
   for (i=0;i<waittime;i++)
   {
     printf("#Please wait %d[s] ! Random number test:%f\n",waittime-i, norm(mt) );
@@ -388,18 +387,17 @@ int main(void)
   printf("#Start Kalman Filter\n");
 #endif
 
-  //eigen_exercise();
-
-  float endtime=2000.0;
-  int counter=0;
-  int sample=100;
-
   //Main Loop 
   while(t<endtime)
   {
-
     //Control
-    //domega << xe(4,0), xe(5,0), xe(6,0);
+    if(t>control_time)
+    {
+      control_time = control_time + control_period;
+      control_counter++;
+      if(control_counter>control_counter_max)control_counter=0;
+    }
+    omega_sim<< p_com[control_counter], q_com[control_counter], r_com[control_counter];
     domega_sim << x_sim(4,0), x_sim(5,0), x_sim(6,0);
     omega_m = omega_sim + domega_sim;
 
@@ -412,35 +410,20 @@ int main(void)
     //--End   Extended Kalman Filter--
 
     //Result output
-#if 1
     if(counter%sample==0)
     {
-      printf("%9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %llu\n",
+      printf("%9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %llu\n",
                 t, 
                 xe(0,0), xe(1,0), xe(2,0),xe(3,0), xe(4,0), xe(5,0),xe(6,0),
                 x_sim(0,0), x_sim(1,0), x_sim(2,0), x_sim(3,0), x_sim(4,0), x_sim(5,0), x_sim(6,0),
+                p_com[control_counter], q_com[control_counter], r_com[control_counter],
                 e_time-s_time);  
-#endif
-#if 0
-      printf("%9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %9.6f %llu\n",
-                t, 
-                x(0,0)-x_sim(0,0), x(1,0)-x_sim(1,0), x(2,0)-x_sim(2,0), x(3,0)-x_sim(3,0), 
-                x(4,0)-x_sim(4,0), x(5,0)-x_sim(5,0), x(6,0)-x_sim(6,0),
-                e_time-s_time);  
-#endif
     }
     counter++;
     
     //Simulation
     rk4(xdot, t, dt, x_sim, omega_sim, beta);
     t=t+dt;
-
-
-    //sleep_ms(100);
   }
-
-  //printf("Bye...");
-  //while(1);
-
   return 0;
 }
