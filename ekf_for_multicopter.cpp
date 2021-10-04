@@ -8,6 +8,7 @@
 #include "pico/stdlib.h"
 #include <Eigen/Dense>
 #include <unistd.h>
+#include <cmath>
 
 #define GRAV (9.80665)
 #define MN (1.0)
