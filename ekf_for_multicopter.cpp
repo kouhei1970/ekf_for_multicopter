@@ -375,9 +375,9 @@ int main(void)
         0,0,0,0,0,0,1;
   
   //Initilize Console Input&Output
-  //stdio_init_all();  
+  stdio_init_all();  
 
-#if 0
+#if 1
   //Start up wait for Pico
   for (i=0;i<waittime;i++)
   {
