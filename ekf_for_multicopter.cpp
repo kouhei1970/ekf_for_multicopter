@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <random>
-//#include "pico/stdlib.h"
+#include "pico/stdlib.h"
 #include <Eigen/Dense>
 #include <unistd.h>
 
@@ -382,7 +382,7 @@ int main(void)
   for (i=0;i<waittime;i++)
   {
     printf("#Please wait %d[s] ! Random number test:%f\n",waittime-i, norm(mt) );
-    sleep(1);
+    sleep_ms(1000);
   }
   printf("#Start Kalman Filter\n");
 #endif
